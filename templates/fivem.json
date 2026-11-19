@@ -1,0 +1,45 @@
+{
+  "format": "rhino-now-v1",
+  "exported_at": "2026-11-19T09:27:12.113086+00:00",
+  "now": {
+    "name": "FiveM",
+    "author": "Rhino Team",
+    "description": "CitizenFX multiplayer modification server for Grand Theft Auto V.",
+    "default_image": "ghcr.io/pandev22/rhino-generic:latest",
+    "docker_images": {
+      "Generic (Default)": "ghcr.io/pandev22/rhino-generic:latest"
+    },
+    "startup_command": "./alpine/opt/cfx-server/ld-musl-x86_64.so.1 --library-path \"alpine/opt/cfx-server/usr/lib/v8/:alpine/opt/cfx-server/lib/:alpine/opt/cfx-server/usr/lib/\" -- alpine/opt/cfx-server/FXServer +set citizen_dir alpine/opt/cfx-server/citizen/ +set sv_licenseKey \"{{FIVEM_LICENSE}}\" +exec server.cfg",
+    "stop_command": "quit",
+    "features": [
+      "config_parser"
+    ],
+    "install_script": "#!/usr/bin/env bash\n# ==============================================================================\n# Rhino Installer - FiveM Multiplayer Server (CitizenFX)\n# Downloads official Linux build artifact & sets up cfx-server-data resources\n# ==============================================================================\nset -euo pipefail\n\nTARGET_DIR=\"${HOME_DIR:-/home/container}\"\ncd \"${TARGET_DIR}\"\n\nFIVEM_VERSION=\"${FIVEM_VERSION:-latest}\"\nFIVEM_LICENSE=\"${FIVEM_LICENSE:-}\"\nSERVER_PORT=\"${SERVER_PORT:-30120}\"\n\necho -e \"\\e[1;33m[rhino-installer]\\e[0m Setting up FiveM Server in ${TARGET_DIR}...\"\n\nARTIFACTS_PAGE_URL=\"https://runtime.fivem.net/artifacts/fivem/build_proot_linux/master/\"\necho -e \"\\e[1;33m[rhino-installer]\\e[0m Resolving recommended FiveM Linux server artifact...\"\n\n# Fetch HTML and extract latest recommended build URL (e.g. ./13824-7df8.../fx.tar.xz)\nLATEST_PATH=$(curl -sSL \"${ARTIFACTS_PAGE_URL}\" | grep -oE '\\./[0-9]+-[a-f0-9]+/fx\\.tar\\.xz' | head -n 1 | sed 's|^\\./||' || true)\n\nif [ -z \"${LATEST_PATH}\" ]; then\n    LATEST_PATH=\"13824-7df8f8c09a8966cbbdd03d09a2ad4f77de29f34a/fx.tar.xz\"\nfi\n\nDOWNLOAD_URL=\"${ARTIFACTS_PAGE_URL}${LATEST_PATH}\"\necho -e \"\\e[1;33m[rhino-installer]\\e[0m Downloading FiveM fx.tar.xz from ${DOWNLOAD_URL}...\"\nmkdir -p alpine\ncurl -sSL \"${DOWNLOAD_URL}\" | tar -xJ -C \"${TARGET_DIR}/alpine/\"\n\n# Download cfx-server-data resources if not present\nif [ ! -d \"resources\" ] && [ ! -d \"cfx-server-data\" ]; then\n    echo -e \"\\e[1;33m[rhino-installer]\\e[0m Downloading baseline cfx-server-data default resources...\"\n    if command -v git &>/dev/null; then\n        git clone --depth=1 https://github.com/citizenfx/cfx-server-data.git /tmp/cfx-data\n        cp -rn /tmp/cfx-data/resources ./resources 2>/dev/null || true\n        rm -rf /tmp/cfx-data\n    else\n        mkdir -p resources/[default]\n    fi\nfi\n\n# Baseline server.cfg\nif [ ! -f \"server.cfg\" ]; then\n    cat <<EOF > server.cfg\n# Rhino Panel - FiveM Server Configuration\nendpoint_add_tcp \"0.0.0.0:${SERVER_PORT}\"\nendpoint_add_udp \"0.0.0.0:${SERVER_PORT}\"\n\nsv_hostname \"A Rhino FiveM Server\"\nsv_licenseKey \"${FIVEM_LICENSE}\"\nsv_maxclients 32\n\nensure mapmanager\nensure chat\nensure spawnmanager\nensure sessionmanager\nensure basic-gamemode\nensure hardcap\n\n# Add system admins\nadd_ace group.admin command allow\nadd_ace group.admin command.quit deny\nEOF\n    echo -e \"\\e[1;32m[rhino-installer]\\e[0m Created baseline server.cfg on port ${SERVER_PORT}.\"\nfi\n\n# Ensure run.sh is executable\nchmod +x alpine/opt/cfx-server/run.sh alpine/run.sh 2>/dev/null || true\n\necho -e \"\\e[1;32m[rhino-installer]\\e[0m FiveM server installation completed successfully.\"\n",
+    "install_container": "ghcr.io/pandev22/rhino-generic:latest",
+    "install_entrypoint": "bash"
+  },
+  "variables": [
+    {
+      "name": "Cfx License Key",
+      "description": "CitizenFX Keymaster server registration key",
+      "env_variable": "FIVEM_LICENSE",
+      "default_value": "",
+      "rules": "required|string",
+      "field_type": "password",
+      "user_viewable": true,
+      "user_editable": true,
+      "sort_order": 1
+    },
+    {
+      "name": "Server Port",
+      "description": "FiveM TCP/UDP listening port",
+      "env_variable": "SERVER_PORT",
+      "default_value": "30120",
+      "rules": "required|numeric",
+      "field_type": "number",
+      "user_viewable": true,
+      "user_editable": false,
+      "sort_order": 2
+    }
+  ]
+}

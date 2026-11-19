@@ -1,0 +1,56 @@
+{
+  "format": "rhino-now-v1",
+  "exported_at": "2026-11-19T09:27:12.113086+00:00",
+  "now": {
+    "name": "Team Fortress 2",
+    "author": "Rhino Team",
+    "description": "Valve Team Fortress 2 Source Dedicated Server (SRCDS).",
+    "default_image": "ghcr.io/pandev22/rhino-steamcmd:latest",
+    "docker_images": {
+      "SteamCMD (Default)": "ghcr.io/pandev22/rhino-steamcmd:latest"
+    },
+    "startup_command": "./srcds_run -game tf -console +map {{START_MAP}} +maxplayers {{MAX_PLAYERS}} -port {{SERVER_PORT}}",
+    "stop_command": "quit",
+    "features": [
+      "auto_update"
+    ],
+    "install_script": "#!/usr/bin/env bash\n# ==============================================================================\n# Rhino Installer - Team Fortress 2 Dedicated Server (SRCDS)\n# Downloads/updates TF2 server files via Valve SteamCMD (App ID 232250)\n# ==============================================================================\nset -euo pipefail\n\nTARGET_DIR=\"${HOME_DIR:-/home/container}\"\ncd \"${TARGET_DIR}\"\n\nAPP_ID=\"232250\"\nVALIDATE=\"${VALIDATE:-1}\"\n\necho -e \"\\e[1;33m[rhino-installer]\\e[0m Setting up Team Fortress 2 in ${TARGET_DIR}...\"\n\nSTEAMCMD_BIN=$(command -v steamcmd || echo \"/usr/games/steamcmd\" || echo \"/steamcmd/steamcmd.sh\")\nif [ ! -x \"${STEAMCMD_BIN}\" ] && [ -f \"/steamcmd/steamcmd.sh\" ]; then\n    STEAMCMD_BIN=\"/steamcmd/steamcmd.sh\"\nfi\n\necho -e \"\\e[1;33m[rhino-installer]\\e[0m Running SteamCMD for TF2 (App ID ${APP_ID})...\"\nif [ \"${VALIDATE}\" = \"1\" ] || [ \"${VALIDATE}\" = \"true\" ]; then\n    \"${STEAMCMD_BIN}\" +force_install_dir \"${TARGET_DIR}\" +login anonymous +app_update \"${APP_ID}\" validate +quit\nelse\n    \"${STEAMCMD_BIN}\" +force_install_dir \"${TARGET_DIR}\" +login anonymous +app_update \"${APP_ID}\" +quit\nfi\n\n# Ensure binaries have executable bit\nchmod +x srcds_run srcds_linux 2>/dev/null || true\n\n# Baseline server.cfg\nmkdir -p tf/cfg\nCFG_FILE=\"tf/cfg/server.cfg\"\nif [ ! -f \"${CFG_FILE}\" ]; then\n    cat <<EOF > \"${CFG_FILE}\"\nhostname \"A Rhino Team Fortress 2 Server\"\nrcon_password \"RhinoRconSecure123!\"\nsv_contact \"admin@rhino.panel\"\nmp_timelimit 30\nmp_maxrounds 5\nsv_pure 1\nsv_pausable 0\nsv_lan 0\nEOF\n    echo -e \"\\e[1;32m[rhino-installer]\\e[0m Generated baseline tf/cfg/server.cfg.\"\nfi\n\necho -e \"\\e[1;32m[rhino-installer]\\e[0m Team Fortress 2 server installation completed successfully.\"\n",
+    "install_container": "ghcr.io/pandev22/rhino-steamcmd:latest",
+    "install_entrypoint": "bash"
+  },
+  "variables": [
+    {
+      "name": "Starting Map",
+      "description": "Default server map",
+      "env_variable": "START_MAP",
+      "default_value": "ctf_2fort",
+      "rules": "required|string",
+      "field_type": "text",
+      "user_viewable": true,
+      "user_editable": true,
+      "sort_order": 1
+    },
+    {
+      "name": "Max Players",
+      "description": "Maximum player slots",
+      "env_variable": "MAX_PLAYERS",
+      "default_value": "24",
+      "rules": "required|numeric",
+      "field_type": "number",
+      "user_viewable": true,
+      "user_editable": true,
+      "sort_order": 2
+    },
+    {
+      "name": "Server Port",
+      "description": "UDP port",
+      "env_variable": "SERVER_PORT",
+      "default_value": "27015",
+      "rules": "required|numeric",
+      "field_type": "number",
+      "user_viewable": true,
+      "user_editable": false,
+      "sort_order": 3
+    }
+  ]
+}
