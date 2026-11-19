@@ -1,0 +1,13 @@
+# Normalize text files in the repository, but force LF for anything executed
+# or parsed by the panel/containers. A CRLF shell script broke real installs
+# (`cd /home/container\r`, `set -euo pipefail` and `+quit\r`).
+* text=auto
+*.sh   text eol=lf
+*.json text eol=lf
+*.py   text eol=lf
+*.rs   text eol=lf
+*.toml text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.md   text eol=lf
+Dockerfile text eol=lf

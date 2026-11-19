@@ -77,6 +77,47 @@ fi
 echo
 
 # ------------------------------------------------------------------------------
+# 1b. Installer Static Security Lint
+# ------------------------------------------------------------------------------
+echo -e "${BOLD}--- Step 1b: Installer Static Security Lint ---${NC}"
+
+if grep -RIl $'\r' "${REPO_ROOT}/installers" "${REPO_ROOT}/templates" >/tmp/rhino-crlf-files 2>/dev/null; then
+    log_fail "CRLF line endings found (they break shell scripts and Docker installs):"
+    cat /tmp/rhino-crlf-files
+else
+    log_pass "Installers and templates use LF line endings"
+fi
+rm -f /tmp/rhino-crlf-files
+
+if grep -RInE "rcon_password[[:space:]]+\"[^\"]+\"|ServerAdminPassword=[^[:space:]]+|Rhino[A-Za-z]*Password" \
+    "${REPO_ROOT}/installers" >/tmp/rhino-default-passwords 2>/dev/null; then
+    log_fail "Hardcoded default RCON/admin password found in an installer:"
+    cat /tmp/rhino-default-passwords
+else
+    log_pass "No hardcoded default RCON/admin passwords in the installers"
+fi
+rm -f /tmp/rhino-default-passwords
+
+if grep -RInE "api\.papermc\.io/v2" "${REPO_ROOT}/installers" >/tmp/rhino-old-paper-api 2>/dev/null; then
+    log_fail "Deprecated PaperMC v2 API still referenced (it returns HTTP 410):"
+    cat /tmp/rhino-old-paper-api
+else
+    log_pass "No deprecated PaperMC v2 API references"
+fi
+rm -f /tmp/rhino-old-paper-api
+
+if grep -RInE "ln -s[f]? /usr/local/steamcmd/steamcmd\.sh /usr/local/bin/steamcmd" \
+    "${REPO_ROOT}/images" >/tmp/rhino-steamcmd-symlink 2>/dev/null; then
+    log_fail "SteamCMD image still uses the broken symlink (wrapper looks for linux32 in /usr/local/bin):"
+    cat /tmp/rhino-steamcmd-symlink
+else
+    log_pass "SteamCMD image does not use the broken /usr/local/bin symlink"
+fi
+rm -f /tmp/rhino-steamcmd-symlink
+
+echo
+
+# ------------------------------------------------------------------------------
 # 2. Build Test Target (images/generic/Dockerfile)
 # ------------------------------------------------------------------------------
 echo -e "${BOLD}--- Step 2: Building Test Image (Generic Runtime) ---${NC}"
@@ -89,6 +130,26 @@ else
     log_fail "Failed to build test image"
     exit 1
 fi
+
+echo
+
+# ------------------------------------------------------------------------------
+# 2b. SteamCMD Wrapper Smoke Test
+# ------------------------------------------------------------------------------
+echo -e "${BOLD}--- Step 2b: Building and Testing SteamCMD Wrapper ---${NC}"
+STEAM_IMAGE_TAG="rhino-verify-steamcmd:local"
+
+if docker build -q -f "${REPO_ROOT}/images/steamcmd/Dockerfile" -t "${STEAM_IMAGE_TAG}" "${REPO_ROOT}" >/dev/null; then
+    log_pass "Successfully built SteamCMD image: ${STEAM_IMAGE_TAG}"
+    if docker run --rm --entrypoint /usr/local/bin/steamcmd "${STEAM_IMAGE_TAG}" +quit >/dev/null 2>&1; then
+        log_pass "SteamCMD wrapper resolves the real linux32 binary and runs as rhino"
+    else
+        log_fail "SteamCMD wrapper failed to run (broken symlink / missing binary)"
+    fi
+else
+    log_fail "Failed to build the SteamCMD image"
+fi
+docker rmi "${STEAM_IMAGE_TAG}" >/dev/null 2>&1 || true
 
 echo
 

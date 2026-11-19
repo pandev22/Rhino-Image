@@ -418,6 +418,57 @@ fn apply_process_title() {
 #[cfg(not(target_os = "linux"))]
 fn apply_process_title() {}
 
+/// Normalize a CRLF install script into a temporary LF copy.
+///
+/// The panel's install scripts used to be stored with Windows CRLF line endings. A shell then
+/// sees `cd /home/container\r` and `set: pipefail: invalid option`, which broke real installs.
+/// Sanitizing at the PID 1 boundary protects every image, whatever the panel/database does.
+fn sanitize_install_script(path: &Path) -> Option<PathBuf> {
+    let bytes = fs::read(path).ok()?;
+    if !bytes.contains(&b'\r') {
+        return None;
+    }
+    let cleaned: Vec<u8> = bytes.into_iter().filter(|b| *b != b'\r').collect();
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let out = std::env::temp_dir().join(format!(
+        "rhino-install-{}-{}.sh",
+        process::id(),
+        nonce
+    ));
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&out)
+        .ok()?;
+    {
+        use std::io::Write;
+        file.write_all(&cleaned).ok()?;
+        file.sync_all().ok()?;
+    }
+    eprintln!(
+        "[rhino-entrypoint] Normalized CRLF install script {} -> {}",
+        path.display(),
+        out.display()
+    );
+    Some(out)
+}
+
+/// Replace every `/mnt/install/*.sh` token with its sanitized LF copy (if it needs one).
+fn sanitize_install_scripts(raw: &str) -> String {
+    let mut out = raw.to_owned();
+    for token in raw.split_whitespace() {
+        if token.starts_with("/mnt/install/") && token.ends_with(".sh") {
+            if let Some(clean) = sanitize_install_script(Path::new(token)) {
+                out = out.replace(token, &clean.to_string_lossy());
+            }
+        }
+    }
+    out
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
 
@@ -479,6 +530,12 @@ fn main() {
         eprintln!("Usage: rhino-entrypoint [COMMAND...] or set STARTUP variable.");
         process::exit(1);
     };
+
+    // Normalize Windows CRLF anywhere in the command/template and sanitize an install script
+    // mounted under /mnt/install before it is executed. This prevents `\r` from breaking
+    // `cd`, `set -eu` or every argument of the install command.
+    let raw_cmd = raw_cmd.replace('\r', "");
+    let raw_cmd = sanitize_install_scripts(&raw_cmd);
 
     // Interpolate environment variables safely in-memory
     let interpolated = interpolate_variables(&raw_cmd);
@@ -753,5 +810,17 @@ mod tests {
         assert!(!contains_shell_metacharacters(
             "echo \"safe | pipe inside quote\""
         ));
+    }
+
+    #[test]
+    fn test_install_script_crlf_is_normalized() {
+        let src = std::env::temp_dir().join(format!("rhino-crlf-{}.sh", process::id()));
+        fs::write(&src, b"#!/bin/bash\r\nset -eu\r\ncd /home/container\r\n").unwrap();
+        let cleaned = sanitize_install_script(&src).expect("CRLF script should be normalized");
+        let body = fs::read(&cleaned).unwrap();
+        assert!(!body.contains(&b'\r'));
+        assert!(body.starts_with(b"#!/bin/bash\n"));
+        let _ = fs::remove_file(&src);
+        let _ = fs::remove_file(&cleaned);
     }
 }

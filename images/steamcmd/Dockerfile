@@ -55,9 +55,15 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
     groupadd -g 1000 rhino && \
     useradd -u 1000 -g rhino -m -d /home/container -s /bin/bash rhino && \
     mkdir -p /home/container /usr/local/steamcmd /home/container/.steam /home/container/Steam && \
-    curl -fsSL "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz" | \
-        tar -xzC /usr/local/steamcmd && \
-    ln -sf /usr/local/steamcmd/steamcmd.sh /usr/local/bin/steamcmd && \
+    curl -fsSL --proto '=https' --proto-redir '=https' --retry 3 --retry-delay 2 \
+        -o /tmp/steamcmd_linux.tar.gz \
+        "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz" && \
+    tar -tzf /tmp/steamcmd_linux.tar.gz | grep -q 'linux32/steamcmd$' && \
+    tar -xzf /tmp/steamcmd_linux.tar.gz -C /usr/local/steamcmd && \
+    rm -f /tmp/steamcmd_linux.tar.gz && \
+    printf '%s\n' '#!/bin/sh' 'exec /usr/local/steamcmd/steamcmd.sh "$@"' > /usr/local/bin/steamcmd && \
+    chmod 0755 /usr/local/bin/steamcmd && \
+    sed -i 's|STEAMROOT="$(cd "$(dirname "$0")"|STEAMROOT="$(cd "$(dirname "$(readlink -f "$0")")"|' /usr/local/steamcmd/steamcmd.sh && \
     mkdir -p /home/container/.steam/sdk32 /home/container/.steam/sdk64 && \
     ln -sf /usr/local/steamcmd/linux32/steamclient.so /home/container/.steam/sdk32/steamclient.so 2>/dev/null || true && \
     ln -sf /usr/local/steamcmd/linux64/steamclient.so /home/container/.steam/sdk64/steamclient.so 2>/dev/null || true && \
@@ -75,7 +81,7 @@ USER rhino
 
 # Perform initial SteamCMD bootstrap update to cache client runtime files
 RUN if [ "$TARGETARCH" = "amd64" ]; then \
-        /usr/local/steamcmd/steamcmd.sh +quit || true; \
+        /usr/local/bin/steamcmd +quit; \
     fi
 
 ENTRYPOINT ["/usr/local/bin/rhino-entrypoint"]

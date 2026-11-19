@@ -39,6 +39,7 @@ RUN apk add --no-cache \
         ca-certificates \
         tzdata \
         curl \
+        xz \
         git \
         jq \
         bash \

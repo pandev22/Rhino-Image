@@ -11,7 +11,10 @@ TEMPLATES_DIR = BASE_DIR
 def read_installer(filename):
     path = INSTALLERS_DIR / filename
     if path.exists():
-        return path.read_text(encoding="utf-8")
+        # Always embed LF line endings: a CRLF install script breaks the shell
+        # (`cd /home/container\r`) and was a real production failure.
+        text = path.read_text(encoding="utf-8")
+        return text.replace("\r\n", "\n").replace("\r", "\n")
     return ""
 
 TEMPLATES = [
@@ -802,7 +805,7 @@ def main():
         }
         
         out_path = TEMPLATES_DIR / f"{slug}.json"
-        with open(out_path, "w", encoding="utf-8") as f:
+        with open(out_path, "w", encoding="utf-8", newline="\n") as f:
             json.dump(export_obj, f, indent=2, ensure_ascii=False)
             f.write("\n")
             
