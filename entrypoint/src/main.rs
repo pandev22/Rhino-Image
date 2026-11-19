@@ -116,6 +116,31 @@ pub fn interpolate_variables(input: &str) -> String {
     result
 }
 
+/// Shell mode: `{{VAR}}` becomes `${VAR}` and the SHELL expands it. A parameter expansion is
+/// never re-parsed as shell syntax, so a variable value (user-controlled) can never inject a
+/// command, whatever it contains (`;`, `$(...)`, quotes…). Invalid names expand to nothing.
+pub fn to_shell_references(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut rest = input;
+    while let Some(start) = rest.find("{{") {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 2..];
+        let Some(end) = after.find("}}") else {
+            out.push_str(&rest[start..]);
+            return out;
+        };
+        let name = after[..end].trim();
+        if !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            out.push_str("${");
+            out.push_str(name);
+            out.push('}');
+        }
+        rest = &after[end + 2..];
+    }
+    out.push_str(rest);
+    out
+}
+
 /// Tokenize command line into individual arguments respecting quotes and escapes.
 pub fn tokenize_command(cmd: &str) -> Vec<String> {
     let mut tokens = Vec::new();
@@ -474,17 +499,24 @@ fn main() {
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(DEFAULT_STOP_TIMEOUT_SECS);
 
-    // Check if command explicitly uses shell metacharacters or requested shell
+    // The shell decision is taken on the TEMPLATE (written by the administrator in the Now),
+    // never on the interpolated line: a variable value cannot switch to shell mode, and once in
+    // shell mode values are expanded by the shell itself (never parsed as code).
     let force_shell = env::var("RHINO_USE_SHELL").unwrap_or_default() == "1";
-    let needs_shell = force_shell || contains_shell_metacharacters(&interpolated);
+    let needs_shell = force_shell || contains_shell_metacharacters(&raw_cmd);
 
     let mut command = if needs_shell {
         eprintln!("[rhino-entrypoint] Spawning via /bin/sh -c (shell control structures detected)");
         let mut c = Command::new("/bin/sh");
-        c.arg("-c").arg(&interpolated);
+        c.arg("-c").arg(to_shell_references(&raw_cmd));
         c
     } else {
-        let tokens = tokenize_command(&interpolated);
+        // Split the TEMPLATE first, then expand each argument: a value containing spaces or
+        // quotes stays one argument.
+        let tokens: Vec<String> = tokenize_command(&raw_cmd)
+            .iter()
+            .map(|t| interpolate_variables(t))
+            .collect();
         if tokens.is_empty() {
             eprintln!("[rhino-entrypoint] Error: Tokenized command is empty.");
             process::exit(1);
@@ -687,6 +719,27 @@ mod tests {
         let long = "é".repeat(300);
         let t = sanitize_title(&long);
         assert!(t.len() <= PROCESS_TITLE_MAX && t.chars().all(|c| c == 'é'));
+    }
+
+    #[test]
+    fn test_values_never_become_code() {
+        // Shell mode: values are referenced, not pasted.
+        assert_eq!(
+            to_shell_references("cd x && java -Xmx{{SERVER_MEMORY}}M -jar \"{{JAR}}\""),
+            "cd x && java -Xmx${SERVER_MEMORY}M -jar \"${JAR}\""
+        );
+        assert_eq!(to_shell_references("echo {{A;B}} {{ OK }}"), "echo  ${OK}");
+        assert_eq!(to_shell_references("echo {{unclosed"), "echo {{unclosed");
+        // Direct mode: one template token = one argument, whatever the value contains.
+        unsafe { env::set_var("RHINO_TEST_VALUE", "a b; rm -rf / $(id)") };
+        let tokens: Vec<String> = tokenize_command("run --name {{RHINO_TEST_VALUE}}")
+            .iter()
+            .map(|t| interpolate_variables(t))
+            .collect();
+        assert_eq!(tokens, vec!["run", "--name", "a b; rm -rf / $(id)"]);
+        assert!(!contains_shell_metacharacters(
+            "run --name {{RHINO_TEST_VALUE}}"
+        ));
     }
 
     #[test]
