@@ -93,7 +93,11 @@ Situé dans `entrypoint/`, `rhino-entrypoint` est le cœur de chaque conteneur R
    - Ne fait aucun appel à `/bin/sh -c` ou `eval` : les arguments sont découpés avec gestion stricte des guillemets et exécutés via l'appel système direct `execve`.
 4. **Support Headless Display Intégré (Xvfb)** :
    - Pour les conteneurs Windows (`rhino-wine`), lorsque `RHINO_START_XVFB=1` est actif, le lanceur démarre automatiquement le serveur d'affichage X11 virtuel `Xvfb` sur `:99` et s'assure de son extinction propre à la fermeture.
-5. **Propagation Stricte des Codes de Sortie** :
+5. **Nom de processus lisible sur l'hôte** :
+   - Si `RHINO_PROCESS_TITLE` est défini (Rhino Action l'injecte : `Rhino Instance <nom du serveur>`), la ligne de commande de PID 1 est réécrite (technique *setproctitle*, environnement préservé) et `prctl(PR_SET_NAME)` est appliqué : chaque serveur apparaît sous ce nom dans `htop` / `ps` sur la machine hôte.
+6. **Console interactive (TTY)** :
+   - Avec un pseudo-terminal (`tty: true`, cas de Rhino Action), le groupe de processus du jeu devient le groupe **au premier plan** du terminal (`tcsetpgrp`). Sans cela, la première commande envoyée sur stdin déclenchait `SIGTTIN` et stoppait le serveur (état `T`).
+7. **Propagation Stricte des Codes de Sortie** :
    - Le conteneur se termine avec le code exact du processus de jeu (ex: `0` pour un arrêt propre, `42`, ou `128 + signal` en cas de signal critique).
 
 ---

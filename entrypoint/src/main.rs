@@ -298,6 +298,101 @@ fn print_banner(workdir: &Path, final_cmd: &str) {
     eprintln!("\x1b[1;36m--------------------------------------------------------\x1b[0m");
 }
 
+/// Max length of the process title (bytes).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+const PROCESS_TITLE_MAX: usize = 200;
+
+/// Fields 48..=51 of `/proc/self/stat`: `arg_start arg_end env_start env_end` (Linux ≥ 3.5).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn parse_cmdline_area(stat: &str) -> Option<(usize, usize, usize, usize)> {
+    // The command name (field 2) may contain spaces: fields are counted after the last ')'.
+    let rest = stat.get(stat.rfind(')')? + 2..)?;
+    let fields: Vec<&str> = rest.split_whitespace().collect();
+    // `rest` starts at field 3.
+    let field = |n: usize| fields.get(n - 3)?.parse::<usize>().ok();
+    Some((field(48)?, field(49)?, field(50)?, field(51)?))
+}
+
+/// Keeps only printable characters and caps the size (UTF-8 boundary safe).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn sanitize_title(raw: &str) -> String {
+    let mut out = String::new();
+    for c in raw.chars().filter(|c| !c.is_control()) {
+        if out.len() + c.len_utf8() > PROCESS_TITLE_MAX {
+            break;
+        }
+        out.push(c);
+    }
+    out.trim().to_string()
+}
+
+/// `RHINO_PROCESS_TITLE` (set by Rhino Action, e.g. "Rhino Instance Lobby") replaces the command line
+/// of PID 1 so every server is recognisable in `htop` / `ps` on the host, and its `comm`
+/// (`prctl(PR_SET_NAME)`, 15 bytes). The argv + environ area is reused (setproctitle technique):
+/// the environment is first copied to the heap, so nothing is lost.
+///
+/// MUST run while the process is single-threaded and after `env::args()` was copied (the strings
+/// it points to are overwritten).
+#[cfg(target_os = "linux")]
+fn apply_process_title() {
+    let Ok(raw) = env::var("RHINO_PROCESS_TITLE") else {
+        return;
+    };
+    let title = sanitize_title(&raw);
+    if title.is_empty() {
+        return;
+    }
+
+    if let Ok(comm) = std::ffi::CString::new(
+        title
+            .as_bytes()
+            .iter()
+            .copied()
+            .take(15)
+            .collect::<Vec<u8>>(),
+    ) {
+        unsafe {
+            libc::prctl(libc::PR_SET_NAME, comm.as_ptr() as libc::c_ulong, 0, 0, 0);
+        }
+    }
+
+    let Some((arg_start, arg_end, env_start, env_end)) = fs::read_to_string("/proc/self/stat")
+        .ok()
+        .and_then(|s| parse_cmdline_area(&s))
+    else {
+        return;
+    };
+    if arg_end <= arg_start {
+        return;
+    }
+    // The environment strings follow argv in the usual layout: reuse them only in that case.
+    let reuse_env = env_start == arg_end && env_end > env_start;
+    let end = if reuse_env { env_end } else { arg_end };
+    let area = end - arg_start;
+
+    if reuse_env {
+        // Copy the environment to the heap before its original strings are overwritten.
+        let vars: Vec<(std::ffi::OsString, std::ffi::OsString)> = env::vars_os().collect();
+        unsafe {
+            libc::clearenv();
+        }
+        for (k, v) in vars {
+            env::set_var(k, v);
+        }
+    }
+
+    let bytes = title.as_bytes();
+    let len = bytes.len().min(area - 1);
+    unsafe {
+        let dst = arg_start as *mut u8;
+        std::ptr::write_bytes(dst, 0, area);
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), dst, len);
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn apply_process_title() {}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
 
@@ -370,6 +465,8 @@ fn main() {
 
     check_security_profile();
     print_banner(&workdir, &interpolated);
+    // Still single-threaded, `args` already copied: safe to rewrite the command line now.
+    apply_process_title();
 
     // Stop timeout (time to wait after SIGTERM before sending SIGKILL)
     let stop_timeout = env::var("RHINO_STOP_TIMEOUT")
@@ -408,6 +505,15 @@ fn main() {
     unsafe {
         command.pre_exec(|| {
             libc::setpgid(0, 0);
+            // With a TTY (Rhino Action consoles), the new process group must also become the
+            // terminal's FOREGROUND group: otherwise reading stdin raises SIGTTIN and the game
+            // server is stopped (state T) as soon as a console command arrives. SIGTTOU is
+            // ignored for the call because we are not yet in the foreground.
+            if libc::isatty(libc::STDIN_FILENO) == 1 {
+                let previous = libc::signal(libc::SIGTTOU, libc::SIG_IGN);
+                libc::tcsetpgrp(libc::STDIN_FILENO, libc::getpid());
+                libc::signal(libc::SIGTTOU, previous);
+            }
             Ok(())
         });
     }
@@ -559,6 +665,28 @@ mod tests {
                 "-test"
             ]
         );
+    }
+
+    #[test]
+    fn test_parse_cmdline_area() {
+        // Field 2 contains spaces and a ')' on purpose.
+        let mut stat = String::from("1 (rhino entry) x) S");
+        for n in 4..=52 {
+            stat.push_str(&format!(" {}", n * 10));
+        }
+        assert_eq!(parse_cmdline_area(&stat), Some((480, 490, 500, 510)));
+        assert_eq!(parse_cmdline_area("garbage"), None);
+    }
+
+    #[test]
+    fn test_sanitize_title() {
+        assert_eq!(
+            sanitize_title("Rhino Instance Lobby\n\u{7}"),
+            "Rhino Instance Lobby"
+        );
+        let long = "é".repeat(300);
+        let t = sanitize_title(&long);
+        assert!(t.len() <= PROCESS_TITLE_MAX && t.chars().all(|c| c == 'é'));
     }
 
     #[test]
