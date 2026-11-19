@@ -39,7 +39,16 @@ if [ -z "${DOWNLOAD_URL}" ] || [ "${DOWNLOAD_URL}" = "null" ]; then
 fi
 
 echo -e "\e[1;33m[rhino-installer]\e[0m Downloading Vanilla server JAR -> ${SERVER_JARFILE}..."
-curl -sSL -o "${SERVER_JARFILE}" "${DOWNLOAD_URL}"
+if ! curl -fsSL -o "${SERVER_JARFILE}" "${DOWNLOAD_URL}"; then
+    echo -e "\e[1;31m[rhino-installer]\e[0m Download failed (HTTP error). Check the Mojang URL."
+    exit 1
+fi
+JAR_SIZE=$(stat -c%s "${SERVER_JARFILE}" 2>/dev/null || stat -f%z "${SERVER_JARFILE}")
+if [ "${JAR_SIZE:-0}" -lt 1048576 ]; then
+    echo -e "\e[1;31m[rhino-installer]\e[0m Downloaded file is too small (${JAR_SIZE} bytes) — likely an error response, not a valid JAR."
+    rm -f "${SERVER_JARFILE}"
+    exit 1
+fi
 
 # Auto EULA
 if [ "${AUTO_EULA}" = "true" ] || [ "${AUTO_EULA}" = "1" ]; then

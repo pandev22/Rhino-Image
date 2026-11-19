@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # Rhino Installer - Velocity Modern Proxy (PaperMC)
-# High-performance, next-generation Minecraft proxy server
+# Uses PaperMC Fill v3 API (fill.papermc.io)
 # ==============================================================================
 set -euo pipefail
 
@@ -13,27 +13,63 @@ BUILD_NUMBER="${BUILD_NUMBER:-latest}"
 SERVER_JARFILE="${SERVER_JARFILE:-velocity.jar}"
 PROXY_PORT="${SERVER_PORT:-25577}"
 
+RHINO_UA="RhinoPanel/1.0 (https://rhino.overnode.fr)"
+API_BASE="https://fill.papermc.io/v3/projects/velocity"
+
 echo -e "\e[1;33m[rhino-installer]\e[0m Setting up Velocity Proxy in ${TARGET_DIR}..."
 
-# Resolve Version if 'latest'
+# ---------------------------------------------------------------------------
+# Resolve version
+# ---------------------------------------------------------------------------
 if [ "${VELOCITY_VERSION}" = "latest" ]; then
-    PROJECT_DATA=$(curl -sSL -H "Accept: application/json" https://api.papermc.io/v2/projects/velocity)
-    VELOCITY_VERSION=$(echo "${PROJECT_DATA}" | jq -r '.versions[-1]')
+    echo -e "\e[1;33m[rhino-installer]\e[0m Resolving latest stable Velocity version from Fill API..."
+    PROJECT_DATA=$(curl -fsSL -H "User-Agent: ${RHINO_UA}" "${API_BASE}")
+    VELOCITY_VERSION=$(echo "${PROJECT_DATA}" | jq -r '
+        .versions | keys_unsorted[0] as $group | .[$group]
+        | map(select(test("^[0-9]+\\.[0-9]+(\\.[0-9]+)?$")))
+        | if length > 0 then .[0] else error("no stable") end
+    ' 2>/dev/null || echo "${PROJECT_DATA}" | jq -r '.versions | keys_unsorted[0] as $g | .[$g][0]')
+    if [ -z "${VELOCITY_VERSION}" ] || [ "${VELOCITY_VERSION}" = "null" ]; then
+        echo -e "\e[1;31m[rhino-installer]\e[0m Failed to resolve latest Velocity version."
+        exit 1
+    fi
     echo -e "\e[1;32m[rhino-installer]\e[0m Resolved latest Velocity version: ${VELOCITY_VERSION}"
 fi
 
-# Resolve Build Number if 'latest'
+# ---------------------------------------------------------------------------
+# Resolve build and get download URL
+# ---------------------------------------------------------------------------
+echo -e "\e[1;33m[rhino-installer]\e[0m Fetching builds for Velocity ${VELOCITY_VERSION}..."
+BUILDS_DATA=$(curl -fsSL -H "User-Agent: ${RHINO_UA}" "${API_BASE}/versions/${VELOCITY_VERSION}/builds")
+
 if [ "${BUILD_NUMBER}" = "latest" ]; then
-    VERSION_DATA=$(curl -sSL -H "Accept: application/json" "https://api.papermc.io/v2/projects/velocity/versions/${VELOCITY_VERSION}")
-    BUILD_NUMBER=$(echo "${VERSION_DATA}" | jq -r '.builds[-1]')
-    echo -e "\e[1;32m[rhino-installer]\e[0m Resolved latest Velocity build: #${BUILD_NUMBER}"
+    DOWNLOAD_URL=$(echo "${BUILDS_DATA}" | jq -r '(map(select(.channel == "STABLE")) | last // last) | .downloads["server:default"].url')
+    BUILD_NUMBER=$(echo "${BUILDS_DATA}" | jq -r '(map(select(.channel == "STABLE")) | last // last) | .id')
+else
+    DOWNLOAD_URL=$(echo "${BUILDS_DATA}" | jq -r --argjson id "${BUILD_NUMBER}" 'map(select(.id == $id)) | .[0] | .downloads["server:default"].url')
 fi
 
-DOWNLOAD_URL="https://api.papermc.io/v2/projects/velocity/versions/${VELOCITY_VERSION}/builds/${BUILD_NUMBER}/downloads/velocity-${VELOCITY_VERSION}-${BUILD_NUMBER}.jar"
-echo -e "\e[1;33m[rhino-installer]\e[0m Downloading Velocity JAR -> ${SERVER_JARFILE}..."
-curl -sSL -o "${SERVER_JARFILE}" "${DOWNLOAD_URL}"
+if [ -z "${DOWNLOAD_URL}" ] || [ "${DOWNLOAD_URL}" = "null" ]; then
+    echo -e "\e[1;31m[rhino-installer]\e[0m Failed to find download URL for Velocity ${VELOCITY_VERSION} build ${BUILD_NUMBER}."
+    exit 1
+fi
 
+echo -e "\e[1;32m[rhino-installer]\e[0m Resolved build: #${BUILD_NUMBER}"
+echo -e "\e[1;33m[rhino-installer]\e[0m Downloading Velocity JAR -> ${SERVER_JARFILE}..."
+if ! curl -fsSL -H "User-Agent: ${RHINO_UA}" -o "${SERVER_JARFILE}" "${DOWNLOAD_URL}"; then
+    echo -e "\e[1;31m[rhino-installer]\e[0m Download failed (HTTP error)."
+    exit 1
+fi
+JAR_SIZE=$(stat -c%s "${SERVER_JARFILE}" 2>/dev/null || stat -f%z "${SERVER_JARFILE}")
+if [ "${JAR_SIZE:-0}" -lt 102400 ]; then
+    echo -e "\e[1;31m[rhino-installer]\e[0m Downloaded file too small (${JAR_SIZE} bytes)."
+    rm -f "${SERVER_JARFILE}"
+    exit 1
+fi
+
+# ---------------------------------------------------------------------------
 # Baseline velocity.toml
+# ---------------------------------------------------------------------------
 if [ ! -f "velocity.toml" ]; then
     cat <<EOF > velocity.toml
 config-version = "2.7"

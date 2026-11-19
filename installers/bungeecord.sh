@@ -13,9 +13,18 @@ PROXY_PORT="${SERVER_PORT:-25577}"
 
 echo -e "\e[1;33m[rhino-installer]\e[0m Setting up BungeeCord in ${TARGET_DIR}..."
 
-DOWNLOAD_URL="https://ci.md-5.net/job/BungeeCord/lastSuccessfulBuild/artifact/bootstrap/target/BungeeCord.jar"
+DOWNLOAD_URL="https://github.com/SpigotMC/BungeeCord/releases/latest/download/BungeeCord.jar"
 echo -e "\e[1;33m[rhino-installer]\e[0m Downloading latest BungeeCord build -> ${SERVER_JARFILE}..."
-curl -sSL -o "${SERVER_JARFILE}" "${DOWNLOAD_URL}"
+if ! curl -fsSL -o "${SERVER_JARFILE}" "${DOWNLOAD_URL}"; then
+    echo -e "\e[1;31m[rhino-installer]\e[0m Download failed (HTTP error). The SpigotMC Jenkins CI may be unavailable."
+    exit 1
+fi
+JAR_SIZE=$(stat -c%s "${SERVER_JARFILE}" 2>/dev/null || stat -f%z "${SERVER_JARFILE}")
+if [ "${JAR_SIZE:-0}" -lt 102400 ]; then
+    echo -e "\e[1;31m[rhino-installer]\e[0m Downloaded file is too small (${JAR_SIZE} bytes) — likely an error response, not a valid JAR."
+    rm -f "${SERVER_JARFILE}"
+    exit 1
+fi
 
 # Create baseline config.yml if not existing
 if [ ! -f "config.yml" ]; then

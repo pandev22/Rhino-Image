@@ -39,7 +39,16 @@ INSTALLER_URL="https://maven.minecraftforge.net/net/minecraftforge/forge/${FULL_
 INSTALLER_FILE="/tmp/forge-${FULL_VERSION}-installer.jar"
 
 echo -e "\e[1;33m[rhino-installer]\e[0m Downloading Forge installer: ${INSTALLER_URL}..."
-curl -sSL -o "${INSTALLER_FILE}" "${INSTALLER_URL}"
+if ! curl -fsSL -o "${INSTALLER_FILE}" "${INSTALLER_URL}"; then
+    echo -e "\e[1;31m[rhino-installer]\e[0m Download failed (HTTP error). Check the Forge version (${FULL_VERSION}) on https://files.minecraftforge.net."
+    exit 1
+fi
+INSTALLER_SIZE=$(stat -c%s "${INSTALLER_FILE}" 2>/dev/null || stat -f%z "${INSTALLER_FILE}")
+if [ "${INSTALLER_SIZE:-0}" -lt 102400 ]; then
+    echo -e "\e[1;31m[rhino-installer]\e[0m Downloaded file is too small (${INSTALLER_SIZE} bytes) — likely an error response, not a valid installer."
+    rm -f "${INSTALLER_FILE}"
+    exit 1
+fi
 
 echo -e "\e[1;33m[rhino-installer]\e[0m Running Forge headless server installation..."
 java -jar "${INSTALLER_FILE}" --installServer "${TARGET_DIR}"

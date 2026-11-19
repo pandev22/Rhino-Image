@@ -40,7 +40,16 @@ fi
 
 LAUNCHER_URL="https://meta.fabricmc.net/v2/versions/loader/${MINECRAFT_VERSION}/${LOADER_VERSION}/${INSTALLER_VERSION}/server/jar"
 echo -e "\e[1;33m[rhino-installer]\e[0m Downloading Fabric launcher JAR -> ${SERVER_JARFILE}..."
-curl -sSL -o "${SERVER_JARFILE}" "${LAUNCHER_URL}"
+if ! curl -fsSL -o "${SERVER_JARFILE}" "${LAUNCHER_URL}"; then
+    echo -e "\e[1;31m[rhino-installer]\e[0m Download failed (HTTP error). Check the Fabric Meta API versions."
+    exit 1
+fi
+JAR_SIZE=$(stat -c%s "${SERVER_JARFILE}" 2>/dev/null || stat -f%z "${SERVER_JARFILE}")
+if [ "${JAR_SIZE:-0}" -lt 102400 ]; then
+    echo -e "\e[1;31m[rhino-installer]\e[0m Downloaded file is too small (${JAR_SIZE} bytes) — likely an error response, not a valid JAR."
+    rm -f "${SERVER_JARFILE}"
+    exit 1
+fi
 
 # Auto EULA
 if [ "${AUTO_EULA}" = "true" ] || [ "${AUTO_EULA}" = "1" ]; then

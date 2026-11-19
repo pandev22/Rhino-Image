@@ -17,17 +17,19 @@ echo -e "\e[1;33m[rhino-installer]\e[0m Setting up FiveM Server in ${TARGET_DIR}
 ARTIFACTS_PAGE_URL="https://runtime.fivem.net/artifacts/fivem/build_proot_linux/master/"
 echo -e "\e[1;33m[rhino-installer]\e[0m Resolving recommended FiveM Linux server artifact..."
 
-# Fetch HTML and extract latest recommended build URL (e.g. ./13824-7df8.../fx.tar.xz)
-LATEST_PATH=$(curl -sSL "${ARTIFACTS_PAGE_URL}" | grep -oE '\./[0-9]+-[a-f0-9]+/fx\.tar\.xz' | head -n 1 | sed 's|^\./||' || true)
+LATEST_PATH=$(curl -fsSL "${ARTIFACTS_PAGE_URL}" | grep -oE '[0-9]+-[a-f0-9]+/fx\.tar\.xz' | head -n 1 || true)
 
 if [ -z "${LATEST_PATH}" ]; then
-    LATEST_PATH="13824-7df8f8c09a8966cbbdd03d09a2ad4f77de29f34a/fx.tar.xz"
+    LATEST_PATH="38435-5c3065c261fb3ba82032fee6803f247198fec221/fx.tar.xz"
 fi
 
 DOWNLOAD_URL="${ARTIFACTS_PAGE_URL}${LATEST_PATH}"
 echo -e "\e[1;33m[rhino-installer]\e[0m Downloading FiveM fx.tar.xz from ${DOWNLOAD_URL}..."
 mkdir -p alpine
-curl -sSL "${DOWNLOAD_URL}" | tar -xJ -C "${TARGET_DIR}/alpine/"
+if ! curl -fsSL "${DOWNLOAD_URL}" | tar -xJ -C "${TARGET_DIR}/alpine/"; then
+    echo -e "\e[1;31m[rhino-installer]\e[0m Failed to download or extract FiveM server files."
+    exit 1
+fi
 
 # Download cfx-server-data resources if not present
 if [ ! -d "resources" ] && [ ! -d "cfx-server-data" ]; then
