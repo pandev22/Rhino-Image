@@ -1,0 +1,17 @@
+[package]
+name = "rhino-entrypoint"
+version = "0.1.0"
+edition = "2021"
+authors = ["Rhino Panel DevSecOps Team"]
+description = "Lightweight, hardened PID 1 entrypoint for Rhino game server containers"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+libc = "0.2.191"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

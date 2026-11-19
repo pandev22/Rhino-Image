@@ -1,0 +1,8 @@
+.git
+.github
+.DS_Store
+target/
+entrypoint/target/
+scripts/
+*.md
+docs/

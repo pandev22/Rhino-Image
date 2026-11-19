@@ -1,0 +1,146 @@
+name: Weekly Security Rebuild (Patch CVEs)
+
+on:
+  schedule:
+    # Run every Sunday morning at 04:00 UTC
+    - cron: '0 4 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write       # For Cosign OIDC signing
+  security-events: write # For Trivy SARIF reporting
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/rhino
+
+jobs:
+  weekly-rebuild:
+    name: Rebuild Images (--no-cache)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: generic
+            image_name: rhino-generic
+            dockerfile: images/generic/Dockerfile
+            platforms: linux/amd64,linux/arm64
+            build_args: ""
+            tag: latest
+
+          - name: java-8
+            image_name: rhino-java
+            dockerfile: images/java/Dockerfile
+            platforms: linux/amd64,linux/arm64
+            build_args: "JAVA_VERSION=8"
+            tag: "8"
+
+          - name: java-17
+            image_name: rhino-java
+            dockerfile: images/java/Dockerfile
+            platforms: linux/amd64,linux/arm64
+            build_args: "JAVA_VERSION=17"
+            tag: "17"
+
+          - name: java-21
+            image_name: rhino-java
+            dockerfile: images/java/Dockerfile
+            platforms: linux/amd64,linux/arm64
+            build_args: "JAVA_VERSION=21"
+            tag: "21"
+
+          - name: java-25
+            image_name: rhino-java
+            dockerfile: images/java/Dockerfile
+            platforms: linux/amd64,linux/arm64
+            build_args: "JAVA_VERSION=25"
+            tag: "25"
+
+          - name: steamcmd
+            image_name: rhino-steamcmd
+            dockerfile: images/steamcmd/Dockerfile
+            platforms: linux/amd64,linux/arm64
+            build_args: ""
+            tag: latest
+
+          - name: wine
+            image_name: rhino-wine
+            dockerfile: images/wine/Dockerfile
+            platforms: linux/amd64
+            build_args: ""
+            tag: latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine Target Image Tags
+        id: tags
+        run: |
+          BUILD_DATE=$(date -u +'%Y%m%d')
+          TARGET="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.name }}"
+          TAGS="${TARGET}:${{ matrix.tag }},${TARGET}:${{ matrix.tag }}-${BUILD_DATE}"
+          if [ "${{ matrix.name }}" = "java-21" ]; then
+            TAGS="${TAGS},${TARGET}:latest"
+          fi
+          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+          echo "primary_tag=${TARGET}:${{ matrix.tag }}" >> $GITHUB_OUTPUT
+
+      - name: Build and Push Docker Image (--no-cache)
+        id: build-push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platforms }}
+          build-args: ${{ matrix.build_args }}
+          pull: true
+          no-cache: true
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+
+      # Security Vulnerability Scan on Freshly Rebuilt Image
+      - name: Run Trivy Security Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.tags.outputs.primary_tag }}
+          format: 'sarif'
+          output: 'trivy-weekly-${{ matrix.name }}.sarif'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+
+      - name: Upload Trivy SARIF results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-weekly-${{ matrix.name }}.sarif'
+          category: 'trivy-weekly-${{ matrix.name }}'
+
+      # Cryptographic Cosign Attestation
+      - name: Sign Container Images with Cosign
+        if: steps.build-push.outputs.digest != ''
+        run: |
+          IFS=',' read -ra ADDR <<< "${{ steps.tags.outputs.tags }}"
+          for tag in "${ADDR[@]}"; do
+            echo "Signing ${tag}@${{ steps.build-push.outputs.digest }}..."
+            cosign sign --yes "${tag}@${{ steps.build-push.outputs.digest }}"
+          done

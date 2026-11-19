@@ -1,0 +1,221 @@
+name: Build, Scan, Sign and Release Images
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*.*.*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write       # Required for Cosign OIDC Keyless signing
+  security-events: write # Required for Trivy SARIF upload
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/rhino
+
+jobs:
+  # ----------------------------------------------------------------------------
+  # Job 1: Unit & Security Tests for Entrypoint
+  # ----------------------------------------------------------------------------
+  test-entrypoint:
+    name: Test Entrypoint (Rust)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            entrypoint/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('entrypoint/Cargo.lock', 'entrypoint/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Check Formatting
+        run: |
+          cd entrypoint
+          cargo fmt -- --check
+
+      - name: Run Clippy
+        run: |
+          cd entrypoint
+          cargo clippy --all-targets -- -D warnings
+
+      - name: Run Unit Tests
+        run: |
+          cd entrypoint
+          cargo test --verbose
+
+  # ----------------------------------------------------------------------------
+  # Job 2: Multi-Architecture Build, Security Scan, Cosign Sign & GHCR Push
+  # ----------------------------------------------------------------------------
+  build-and-release:
+    name: Build & Release Images
+    needs: test-entrypoint
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Generic Polyvalent (Bun + Node + Python + uv)
+          - name: generic
+            image_name: rhino-generic
+            dockerfile: images/generic/Dockerfile
+            platforms: linux/amd64,linux/arm64
+            build_args: ""
+            tags_rule: |
+              type=raw,value=latest,enable={{is_default_branch}}
+              type=ref,event=branch
+              type=semver,pattern={{version}}
+              type=semver,pattern={{major}}.{{minor}}
+              type=sha,prefix=sha-
+
+          # Java Runtimes (Temurin JRE 8, 17, 21 LTS, 25)
+          - name: java-8
+            image_name: rhino-java
+            dockerfile: images/java/Dockerfile
+            platforms: linux/amd64,linux/arm64
+            build_args: "JAVA_VERSION=8"
+            tags_rule: |
+              type=raw,value=8,enable={{is_default_branch}}
+              type=raw,value=8-${{ github.sha }}
+
+          - name: java-17
+            image_name: rhino-java
+            dockerfile: images/java/Dockerfile
+            platforms: linux/amd64,linux/arm64
+            build_args: "JAVA_VERSION=17"
+            tags_rule: |
+              type=raw,value=17,enable={{is_default_branch}}
+              type=raw,value=17-${{ github.sha }}
+
+          - name: java-21
+            image_name: rhino-java
+            dockerfile: images/java/Dockerfile
+            platforms: linux/amd64,linux/arm64
+            build_args: "JAVA_VERSION=21"
+            tags_rule: |
+              type=raw,value=21,enable={{is_default_branch}}
+              type=raw,value=latest,enable={{is_default_branch}}
+              type=raw,value=21-${{ github.sha }}
+
+          - name: java-25
+            image_name: rhino-java
+            dockerfile: images/java/Dockerfile
+            platforms: linux/amd64,linux/arm64
+            build_args: "JAVA_VERSION=25"
+            tags_rule: |
+              type=raw,value=25,enable={{is_default_branch}}
+              type=raw,value=25-${{ github.sha }}
+
+          # SteamCMD (Debian 13 Trixie Slim + i386 glibc)
+          - name: steamcmd
+            image_name: rhino-steamcmd
+            dockerfile: images/steamcmd/Dockerfile
+            platforms: linux/amd64,linux/arm64
+            build_args: ""
+            tags_rule: |
+              type=raw,value=latest,enable={{is_default_branch}}
+              type=ref,event=branch
+              type=semver,pattern={{version}}
+              type=sha,prefix=sha-
+
+          # Wine WoW64 + Xvfb (Debian 13 Trixie Slim)
+          - name: wine
+            image_name: rhino-wine
+            dockerfile: images/wine/Dockerfile
+            platforms: linux/amd64
+            build_args: ""
+            tags_rule: |
+              type=raw,value=latest,enable={{is_default_branch}}
+              type=ref,event=branch
+              type=semver,pattern={{version}}
+              type=sha,prefix=sha-
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU (Multi-Architecture Emulation)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install Cosign (Sigstore)
+        if: github.event_name != 'pull_request'
+        uses: sigstore/cosign-installer@v3
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate Docker Metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.name }}
+          tags: ${{ matrix.tags_rule }}
+
+      - name: Build and Push Docker Image
+        id: build-push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platforms }}
+          build-args: ${{ matrix.build_args }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Security Vulnerability Scanning using Trivy
+      - name: Run Trivy Vulnerability Scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.meta.outputs.tags != '' && fromJSON(steps.meta.outputs.json).tags[0] || '' }}
+          format: 'sarif'
+          output: 'trivy-results-${{ matrix.name }}.sarif'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+
+      - name: Upload Trivy SARIF results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && github.event_name != 'pull_request'
+        with:
+          sarif_file: 'trivy-results-${{ matrix.name }}.sarif'
+          category: 'trivy-${{ matrix.name }}'
+
+      # Cryptographic Keyless Signing with Cosign OIDC
+      - name: Sign Container Images with Cosign
+        if: github.event_name != 'pull_request' && steps.build-push.outputs.digest != ''
+        run: |
+          for tag in ${{ steps.meta.outputs.tags }}; do
+            echo "Signing ${tag}@${{ steps.build-push.outputs.digest }}..."
+            cosign sign --yes "${tag}@${{ steps.build-push.outputs.digest }}"
+          done
