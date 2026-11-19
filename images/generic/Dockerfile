@@ -29,7 +29,9 @@ LABEL org.opencontainers.image.title="Rhino Game Server - Generic Polyvalent" \
 
 ENV USER=rhino \
     HOME=/home/container \
-    PATH="/home/container/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+    # User-installed tools (~/.local/bin, in the player-writable volume) come LAST: they can
+    # never shadow a system binary (cat, sh…) resolved by name.
+    PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/container/.local/bin" \
     PYTHONUNBUFFERED=1
 
 # Install runtime dependencies, Node.js LTS, Python 3, and core utilities
