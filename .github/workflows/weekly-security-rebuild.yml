@@ -14,7 +14,6 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ${{ github.repository_owner }}/rhino
 
 jobs:
   weekly-rebuild:
@@ -97,7 +96,7 @@ jobs:
         id: tags
         run: |
           BUILD_DATE=$(date -u +'%Y%m%d')
-          TARGET="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.name }}"
+          TARGET="${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image_name }}"
           TAGS="${TARGET}:${{ matrix.tag }},${TARGET}:${{ matrix.tag }}-${BUILD_DATE}"
           if [ "${{ matrix.name }}" = "java-21" ]; then
             TAGS="${TAGS},${TARGET}:latest"
@@ -121,6 +120,9 @@ jobs:
       # Security Vulnerability Scan on Freshly Rebuilt Image
       - name: Run Trivy Security Scan
         uses: aquasecurity/trivy-action@master
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
         with:
           image-ref: ${{ steps.tags.outputs.primary_tag }}
           format: 'sarif'
@@ -138,9 +140,13 @@ jobs:
       # Cryptographic Cosign Attestation
       - name: Sign Container Images with Cosign
         if: steps.build-push.outputs.digest != ''
+        env:
+          TAGS: ${{ steps.tags.outputs.tags }}
+          DIGEST: ${{ steps.build-push.outputs.digest }}
         run: |
-          IFS=',' read -ra ADDR <<< "${{ steps.tags.outputs.tags }}"
+          IFS=',' read -ra ADDR <<< "$TAGS"
           for tag in "${ADDR[@]}"; do
-            echo "Signing ${tag}@${{ steps.build-push.outputs.digest }}..."
-            cosign sign --yes "${tag}@${{ steps.build-push.outputs.digest }}"
+            [ -z "$tag" ] && continue
+            echo "Signing ${tag}@${DIGEST}..."
+            cosign sign --yes "${tag}@${DIGEST}"
           done

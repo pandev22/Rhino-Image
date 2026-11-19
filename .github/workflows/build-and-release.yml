@@ -19,7 +19,6 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ${{ github.repository_owner }}/rhino
 
 jobs:
   # ----------------------------------------------------------------------------
@@ -177,7 +176,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.name }}
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image_name }}
           tags: ${{ matrix.tags_rule }}
 
       - name: Build and Push Docker Image
@@ -196,9 +195,13 @@ jobs:
 
       # Security Vulnerability Scanning using Trivy
       - name: Run Trivy Vulnerability Scanner
+        if: github.event_name != 'pull_request'
         uses: aquasecurity/trivy-action@master
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
         with:
-          image-ref: ${{ steps.meta.outputs.tags != '' && fromJSON(steps.meta.outputs.json).tags[0] || '' }}
+          image-ref: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
           format: 'sarif'
           output: 'trivy-results-${{ matrix.name }}.sarif'
           severity: 'CRITICAL,HIGH'
@@ -214,8 +217,12 @@ jobs:
       # Cryptographic Keyless Signing with Cosign OIDC
       - name: Sign Container Images with Cosign
         if: github.event_name != 'pull_request' && steps.build-push.outputs.digest != ''
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.build-push.outputs.digest }}
         run: |
-          for tag in ${{ steps.meta.outputs.tags }}; do
-            echo "Signing ${tag}@${{ steps.build-push.outputs.digest }}..."
-            cosign sign --yes "${tag}@${{ steps.build-push.outputs.digest }}"
-          done
+          while IFS= read -r tag; do
+            [ -z "$tag" ] && continue
+            echo "Signing ${tag}@${DIGEST}..."
+            cosign sign --yes "${tag}@${DIGEST}"
+          done <<< "$TAGS"
