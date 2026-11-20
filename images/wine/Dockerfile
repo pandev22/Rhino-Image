@@ -7,14 +7,16 @@
 # ------------------------------------------------------------------------------
 # Stage 1: Build static musl rhino-entrypoint binary (PID 1)
 # ------------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM rust:alpine AS entrypoint-builder
+FROM rust:alpine AS entrypoint-builder
 WORKDIR /build
 
 RUN apk add --no-cache musl-dev
 
 COPY entrypoint/ ./
-RUN cargo build --release && \
-    strip target/release/rhino-entrypoint
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/build/target \
+    cargo build --release --locked && \
+    cp target/release/rhino-entrypoint /rhino-entrypoint
 
 # ------------------------------------------------------------------------------
 # Stage 2: Hardened Wine WoW64 Runtime
@@ -40,6 +42,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     DISPLAY_HEIGHT=768 \
     DISPLAY_DEPTH=16 \
     RHINO_START_XVFB=1
+
+# No man pages / docs / extra locales in a game-server image: they are never read and add 15-60 MB.
+RUN printf 'path-exclude=/usr/share/doc/*\npath-exclude=/usr/share/man/*\npath-exclude=/usr/share/info/*\npath-exclude=/usr/share/locale/*\npath-include=/usr/share/locale/en*\npath-exclude=/usr/share/lintian/*\n' > /etc/dpkg/dpkg.cfg.d/01-rhino-slim && \
+    printf 'APT::Install-Recommends "false";\nAPT::Install-Suggests "false";\n' > /etc/apt/apt.conf.d/01-rhino-slim
 
 # Install Wine 64-bit & 32-bit WoW64 runtime + Xvfb headless display server
 RUN if [ "$TARGETARCH" = "amd64" ]; then \
@@ -68,16 +74,14 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/* /tmp/* /var/tmp/* /var/log/*
 
 # Copy statically linked PID 1 launcher
-COPY --from=entrypoint-builder /build/target/release/rhino-entrypoint /usr/local/bin/rhino-entrypoint
-RUN chmod 755 /usr/local/bin/rhino-entrypoint
+COPY --from=entrypoint-builder --chmod=755 /rhino-entrypoint /usr/local/bin/rhino-entrypoint
 
 WORKDIR /home/container
 USER rhino
 
-# Pre-initialize basic wine prefix as rhino user to accelerate first startup
-RUN if [ "$TARGETARCH" = "amd64" ]; then \
-        wineboot --init 2>/dev/null || true; \
-    fi
+# NOTE: no `wineboot --init` here: WINEPREFIX lives in /home/container, which is a volume at
+# runtime, so a prefix baked into the image would be hidden (and cost ~100 MB). The Wine prefix is
+# created on the first start, directly in the volume.
 
 ENTRYPOINT ["/usr/local/bin/rhino-entrypoint"]
 CMD ["wine64", "--version"]

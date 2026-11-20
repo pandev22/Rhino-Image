@@ -1,6 +1,10 @@
 {
   "format": "rhino-now-v1",
+<<<<<<< HEAD
   "exported_at": "2026-11-19T23:21:17.670309+00:00",
+=======
+  "exported_at": "2026-11-20T10:29:27.463008+00:00",
+>>>>>>> f6e11ff (Refactor Dockerfile and update game server templates)
   "now": {
     "name": "FiveM",
     "author": "Rhino Team",
@@ -9,7 +13,7 @@
     "docker_images": {
       "Generic (Default)": "ghcr.io/pandev22/rhino-generic:latest"
     },
-    "startup_command": "./alpine/opt/cfx-server/ld-musl-x86_64.so.1 --library-path \"alpine/opt/cfx-server/usr/lib/v8/:alpine/opt/cfx-server/lib/:alpine/opt/cfx-server/usr/lib/\" -- alpine/opt/cfx-server/FXServer +set citizen_dir alpine/opt/cfx-server/citizen/ +set sv_licenseKey \"{{FIVEM_LICENSE}}\" +exec server.cfg",
+    "startup_command": "./alpine/opt/cfx-server/ld-musl-x86_64.so.1 --library-path \"alpine/opt/cfx-server/usr/lib/v8/:alpine/opt/cfx-server/lib/:alpine/opt/cfx-server/usr/lib/\" -- alpine/opt/cfx-server/FXServer +set citizen_dir alpine/opt/cfx-server/citizen/ +set endpoint_add_tcp \"0.0.0.0:{{SERVER_PORT}}\" +set endpoint_add_udp \"0.0.0.0:{{SERVER_PORT}}\" +set onesync on +set sv_endpointprivacy true +set sv_licenseKey \"{{FIVEM_LICENSE}}\" +exec server.cfg",
     "stop_command": "quit",
     "features": [
       "config_parser"

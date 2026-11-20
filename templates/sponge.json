@@ -1,6 +1,10 @@
 {
   "format": "rhino-now-v1",
+<<<<<<< HEAD
   "exported_at": "2026-11-19T23:21:17.670309+00:00",
+=======
+  "exported_at": "2026-11-20T10:29:27.463008+00:00",
+>>>>>>> f6e11ff (Refactor Dockerfile and update game server templates)
   "now": {
     "name": "Sponge",
     "author": "Rhino Team",
@@ -10,7 +14,7 @@
       "Java 21 (Default)": "ghcr.io/pandev22/rhino-java:21",
       "Java 17 LTS": "ghcr.io/pandev22/rhino-java:17"
     },
-    "startup_command": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}} nogui",
+    "startup_command": "java {{RHINO_JAVA_FLAGS}} -jar {{SERVER_JARFILE}} nogui",
     "stop_command": "stop",
     "features": [
       "eula_modal",
@@ -31,6 +35,28 @@
       "user_viewable": true,
       "user_editable": true,
       "sort_order": 1
+    },
+    {
+      "name": "JVM Preset",
+      "description": "JVM flag set tuned by the image: aikar (game servers, default), proxy (Velocity/BungeeCord), zgc (Java 21+, lowest pauses), minimal (heap only)",
+      "env_variable": "JAVA_PRESET",
+      "default_value": "aikar",
+      "rules": "required|string|in:aikar,proxy,zgc,minimal",
+      "field_type": "text",
+      "user_viewable": true,
+      "user_editable": true,
+      "sort_order": 2
+    },
+    {
+      "name": "Extra JVM Flags",
+      "description": "Optional additional JVM options (each must start with '-'), appended after the preset",
+      "env_variable": "JAVA_EXTRA_FLAGS",
+      "default_value": "",
+      "rules": "nullable|string|max:200",
+      "field_type": "text",
+      "user_viewable": true,
+      "user_editable": true,
+      "sort_order": 3
     }
   ]
 }

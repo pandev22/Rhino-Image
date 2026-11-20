@@ -30,7 +30,7 @@ TEMPLATES = [
             "Java 8 Legacy": "ghcr.io/pandev22/rhino-java:8",
             "Java 25 Early Access": "ghcr.io/pandev22/rhino-java:25"
         },
-        "startup_command": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -XX:+UseG1GC -XX:+ParallelRefProcEnabled -jar {{SERVER_JARFILE}}",
+        "startup_command": "java {{RHINO_JAVA_FLAGS}} -jar {{SERVER_JARFILE}} nogui",
         "stop_command": "stop",
         "features": ["eula_modal", "java_version_selector", "auto_update", "config_parser"],
         "installer_file": "paper.sh",
@@ -94,7 +94,7 @@ TEMPLATES = [
             "Java 17 LTS": "ghcr.io/pandev22/rhino-java:17",
             "Java 8 Legacy": "ghcr.io/pandev22/rhino-java:8"
         },
-        "startup_command": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}} nogui",
+        "startup_command": "java {{RHINO_JAVA_FLAGS}} -jar {{SERVER_JARFILE}} nogui",
         "stop_command": "stop",
         "features": ["eula_modal", "java_version_selector"],
         "installer_file": "forge.sh",
@@ -147,7 +147,7 @@ TEMPLATES = [
             "Java 17 LTS": "ghcr.io/pandev22/rhino-java:17",
             "Java 8 Legacy": "ghcr.io/pandev22/rhino-java:8"
         },
-        "startup_command": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}} nogui",
+        "startup_command": "java {{RHINO_JAVA_FLAGS}} -jar {{SERVER_JARFILE}} nogui",
         "stop_command": "stop",
         "features": ["eula_modal", "java_version_selector"],
         "installer_file": "vanilla.sh",
@@ -189,7 +189,7 @@ TEMPLATES = [
             "Java 17 LTS": "ghcr.io/pandev22/rhino-java:17",
             "Java 8 Legacy": "ghcr.io/pandev22/rhino-java:8"
         },
-        "startup_command": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}}",
+        "startup_command": "java {{RHINO_JAVA_FLAGS}} -jar {{SERVER_JARFILE}}",
         "stop_command": "end",
         "features": ["java_version_selector"],
         "installer_file": "bungeecord.sh",
@@ -229,7 +229,7 @@ TEMPLATES = [
         "docker_images": {
             "Generic (Default)": "ghcr.io/pandev22/rhino-generic:latest"
         },
-        "startup_command": "./bin/php7/bin/php PocketMine-MP.phar --no-wizard",
+        "startup_command": "./bin/php7/bin/php -dopcache.enable_cli=1 -dopcache.jit=1205 -dopcache.jit_buffer_size=128M -dzend.assertions=-1 PocketMine-MP.phar --no-wizard",
         "stop_command": "stop",
         "features": ["auto_update"],
         "installer_file": "pocketminemp.sh",
@@ -259,7 +259,7 @@ TEMPLATES = [
             "Java 21 (Default)": "ghcr.io/pandev22/rhino-java:21",
             "Java 17 LTS": "ghcr.io/pandev22/rhino-java:17"
         },
-        "startup_command": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -XX:+UseG1GC -jar {{SERVER_JARFILE}}",
+        "startup_command": "java {{RHINO_JAVA_FLAGS}} -jar {{SERVER_JARFILE}}",
         "stop_command": "end",
         "features": ["java_version_selector"],
         "installer_file": "velocity.sh",
@@ -300,7 +300,7 @@ TEMPLATES = [
             "Java 21 (Default)": "ghcr.io/pandev22/rhino-java:21",
             "Java 17 LTS": "ghcr.io/pandev22/rhino-java:17"
         },
-        "startup_command": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}} nogui",
+        "startup_command": "java {{RHINO_JAVA_FLAGS}} -jar {{SERVER_JARFILE}} nogui",
         "stop_command": "stop",
         "features": ["eula_modal", "java_version_selector"],
         "installer_file": "sponge.sh",
@@ -330,7 +330,7 @@ TEMPLATES = [
             "Java 21 (Default)": "ghcr.io/pandev22/rhino-java:21",
             "Java 17 LTS": "ghcr.io/pandev22/rhino-java:17"
         },
-        "startup_command": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}} nogui",
+        "startup_command": "java {{RHINO_JAVA_FLAGS}} -jar {{SERVER_JARFILE}} nogui",
         "stop_command": "stop",
         "features": ["eula_modal", "java_version_selector"],
         "installer_file": "fabric.sh",
@@ -359,7 +359,7 @@ TEMPLATES = [
         "docker_images": {
             "SteamCMD (Default)": "ghcr.io/pandev22/rhino-steamcmd:latest"
         },
-        "startup_command": "./ShooterGame/Binaries/Linux/ShooterGameServer TheIsland?listen?SessionName=\"{{SERVER_NAME}}\"?ServerPassword=\"{{SERVER_PASSWORD}}\"?ServerAdminPassword=\"{{ADMIN_PASSWORD}}\" -server -log",
+        "startup_command": "./ShooterGame/Binaries/Linux/ShooterGameServer TheIsland?listen?Port={{SERVER_PORT}}?SessionName=\"{{SERVER_NAME}}\"?ServerPassword=\"{{SERVER_PASSWORD}}\"?ServerAdminPassword=\"{{ADMIN_PASSWORD}}\" -server -log -NoHangDetection -usecache -structurememopts -servergamelog",
         "stop_command": "doexit",
         "features": ["auto_update"],
         "installer_file": "ark.sh",
@@ -421,7 +421,7 @@ TEMPLATES = [
         "docker_images": {
             "SteamCMD (Default)": "ghcr.io/pandev22/rhino-steamcmd:latest"
         },
-        "startup_command": "./srcds_run -game tf -console +map {{START_MAP}} +maxplayers {{MAX_PLAYERS}} -port {{SERVER_PORT}}",
+        "startup_command": "./srcds_run -game tf -console -norestart -nobreakpad -tickrate 66 -ip 0.0.0.0 -port {{SERVER_PORT}} +map {{START_MAP}} +maxplayers {{MAX_PLAYERS}}",
         "stop_command": "quit",
         "features": ["auto_update"],
         "installer_file": "tf2.sh",
@@ -472,7 +472,7 @@ TEMPLATES = [
         "docker_images": {
             "SteamCMD (Default)": "ghcr.io/pandev22/rhino-steamcmd:latest"
         },
-        "startup_command": "./srcds_run -game garrysmod -console +gamemode {{GAMEMODE}} +map {{START_MAP}} +maxplayers {{MAX_PLAYERS}} -port {{SERVER_PORT}}",
+        "startup_command": "./srcds_run -game garrysmod -console -norestart -nobreakpad -disableluarefresh -tickrate 33 -ip 0.0.0.0 -port {{SERVER_PORT}} +gamemode {{GAMEMODE}} +map {{START_MAP}} +maxplayers {{MAX_PLAYERS}}",
         "stop_command": "quit",
         "features": ["auto_update"],
         "installer_file": "gmod.sh",
@@ -534,7 +534,7 @@ TEMPLATES = [
         "docker_images": {
             "SteamCMD (Default)": "ghcr.io/pandev22/rhino-steamcmd:latest"
         },
-        "startup_command": "./game/cs2.sh -dedicated -port {{SERVER_PORT}} +map {{START_MAP}} +maxplayers {{MAX_PLAYERS}}",
+        "startup_command": "./game/cs2.sh -dedicated -console -usercon -nobreakpad -ip 0.0.0.0 -port {{SERVER_PORT}} +map {{START_MAP}} +maxplayers {{MAX_PLAYERS}}",
         "stop_command": "quit",
         "features": ["auto_update"],
         "installer_file": "cs2.sh",
@@ -625,7 +625,7 @@ TEMPLATES = [
         "docker_images": {
             "Generic (Default)": "ghcr.io/pandev22/rhino-generic:latest"
         },
-        "startup_command": "./alpine/opt/cfx-server/ld-musl-x86_64.so.1 --library-path \"alpine/opt/cfx-server/usr/lib/v8/:alpine/opt/cfx-server/lib/:alpine/opt/cfx-server/usr/lib/\" -- alpine/opt/cfx-server/FXServer +set citizen_dir alpine/opt/cfx-server/citizen/ +set sv_licenseKey \"{{FIVEM_LICENSE}}\" +exec server.cfg",
+        "startup_command": "./alpine/opt/cfx-server/ld-musl-x86_64.so.1 --library-path \"alpine/opt/cfx-server/usr/lib/v8/:alpine/opt/cfx-server/lib/:alpine/opt/cfx-server/usr/lib/\" -- alpine/opt/cfx-server/FXServer +set citizen_dir alpine/opt/cfx-server/citizen/ +set endpoint_add_tcp \"0.0.0.0:{{SERVER_PORT}}\" +set endpoint_add_udp \"0.0.0.0:{{SERVER_PORT}}\" +set onesync on +set sv_endpointprivacy true +set sv_licenseKey \"{{FIVEM_LICENSE}}\" +exec server.cfg",
         "stop_command": "quit",
         "features": ["config_parser"],
         "installer_file": "fivem.sh",
@@ -665,7 +665,7 @@ TEMPLATES = [
         "docker_images": {
             "Generic (Default)": "ghcr.io/pandev22/rhino-generic:latest"
         },
-        "startup_command": "node {{MAIN_FILE}}",
+        "startup_command": "node --max-old-space-size={{RHINO_HEAP_MB}} --max-semi-space-size=16 {{MAIN_FILE}}",
         "stop_command": "^C",
         "features": ["auto_update"],
         "installer_file": "nodejs.sh",
@@ -705,7 +705,7 @@ TEMPLATES = [
         "docker_images": {
             "Generic (Default)": "ghcr.io/pandev22/rhino-generic:latest"
         },
-        "startup_command": ".venv/bin/python3 {{MAIN_FILE}}",
+        "startup_command": ".venv/bin/python3 -X utf8 {{MAIN_FILE}}",
         "stop_command": "^C",
         "features": ["auto_update"],
         "installer_file": "python.sh",
@@ -745,7 +745,7 @@ TEMPLATES = [
         "docker_images": {
             "Generic (Default)": "ghcr.io/pandev22/rhino-generic:latest"
         },
-        "startup_command": "bun run {{MAIN_FILE}}",
+        "startup_command": "bun --smol run {{MAIN_FILE}}",
         "stop_command": "^C",
         "features": ["auto_update"],
         "installer_file": "bun.sh",
@@ -778,12 +778,40 @@ TEMPLATES = [
     }
 ]
 
+JAVA_VARS = lambda preset, base: [
+    {
+        "name": "JVM Preset",
+        "description": "JVM flag set tuned by the image: aikar (game servers, default), proxy (Velocity/BungeeCord), zgc (Java 21+, lowest pauses), minimal (heap only)",
+        "env_variable": "JAVA_PRESET",
+        "default_value": preset,
+        "rules": "required|string|in:aikar,proxy,zgc,minimal",
+        "field_type": "text",
+        "user_viewable": True,
+        "user_editable": True,
+        "sort_order": base
+    },
+    {
+        "name": "Extra JVM Flags",
+        "description": "Optional additional JVM options (each must start with '-'), appended after the preset",
+        "env_variable": "JAVA_EXTRA_FLAGS",
+        "default_value": "",
+        "rules": "nullable|string|max:200",
+        "field_type": "text",
+        "user_viewable": True,
+        "user_editable": True,
+        "sort_order": base + 1
+    },
+]
+
 def main():
     now_ts = datetime.now(timezone.utc).isoformat()
     generated_count = 0
     for t in TEMPLATES:
         slug = t["id"]
         install_script_content = read_installer(t["installer_file"])
+        if "{{RHINO_JAVA_FLAGS}}" in t["startup_command"]:
+            preset = "proxy" if t["id"] in ("bungeecord", "velocity") else "aikar"
+            t["variables"] = t["variables"] + JAVA_VARS(preset, len(t["variables"]) + 1)
         
         export_obj = {
             "format": "rhino-now-v1",

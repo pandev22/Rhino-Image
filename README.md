@@ -45,13 +45,26 @@ Toutes les images sont publiées sur **GitHub Container Registry** sous l'espace
 
 | Image | Tag GHCR | Architectures | Base OS | Runtimes inclus | Cas d'usage principaux |
 |---|---|---|---|---|---|
-| **Java 21 LTS** *(Défaut)* | `ghcr.io/pandev22/rhino-java:21`<br>`ghcr.io/pandev22/rhino-java:latest` | `linux/amd64`<br>`linux/arm64` | Ubuntu 24.04 (Noble) | Eclipse Temurin JRE 21 LTS, libfreetype, fontconfig | Minecraft 1.20.5+, Paper, Purpur, Velocity, Folia |
-| **Java 17 LTS** | `ghcr.io/pandev22/rhino-java:17` | `linux/amd64`<br>`linux/arm64` | Ubuntu 24.04 (Noble) | Eclipse Temurin JRE 17 LTS, libfreetype, fontconfig | Minecraft 1.18 - 1.20.4, Forge, Fabric, plugins legacy |
-| **Java 8 Legacy** | `ghcr.io/pandev22/rhino-java:8` | `linux/amd64`<br>`linux/arm64` | Ubuntu 24.04 (Noble) | Eclipse Temurin JRE 8, libfreetype, fontconfig | Minecraft 1.8 - 1.16.5, serveurs BungeeCord legacy |
-| **Java 25 (Next-Gen)** | `ghcr.io/pandev22/rhino-java:25` | `linux/amd64`<br>`linux/arm64` | Ubuntu 24.04 (Noble) | Eclipse Temurin JRE 25 (Early Access / Bleeding Edge) | Tests anticipés de runtimes, optimisations ZGC |
+| **Java 21 LTS** *(Défaut)* | `ghcr.io/pandev22/rhino-java:21`<br>`ghcr.io/pandev22/rhino-java:latest` | `linux/amd64`<br>`linux/arm64` | Distroless (Debian 13, sans shell) | Eclipse Temurin JRE 21 LTS (allégé) | Minecraft 1.20.5+, Paper, Purpur, Velocity, Folia |
+| **Java 17 LTS** | `ghcr.io/pandev22/rhino-java:17` | `linux/amd64`<br>`linux/arm64` | Distroless (Debian 13, sans shell) | Eclipse Temurin JRE 17 LTS (allégé) | Minecraft 1.18 - 1.20.4, Forge, Fabric, plugins legacy |
+| **Java 8 Legacy** | `ghcr.io/pandev22/rhino-java:8` | `linux/amd64`<br>`linux/arm64` | Distroless (Debian 13, sans shell) | Eclipse Temurin JRE 8 (allégé) | Minecraft 1.8 - 1.16.5, serveurs BungeeCord legacy |
+| **Java 25 (Next-Gen)** | `ghcr.io/pandev22/rhino-java:25` | `linux/amd64`<br>`linux/arm64` | Distroless (Debian 13, sans shell) | Eclipse Temurin JRE 25 (allégé) | Tests anticipés de runtimes, optimisations ZGC |
 | **SteamCMD** | `ghcr.io/pandev22/rhino-steamcmd:latest` | `linux/amd64`<br>`linux/arm64` | Debian 13 (Trixie Slim) | SteamCMD natif Valve, glibc multi-arch i386, UTF-8 | Rust, ARK, CS2, Valheim, Palworld Linux |
 | **Wine Windows** | `ghcr.io/pandev22/rhino-wine:latest` | `linux/amd64` | Debian 13 (Trixie Slim) | Wine WoW64 (32/64-bit), Xvfb headless display, cabextract | Serveurs de jeux Windows natifs (Assetto Corsa, DayZ, Space Engineers) |
 | **Generic Polyvalent** | `ghcr.io/pandev22/rhino-generic:latest` | `linux/amd64`<br>`linux/arm64` | Alpine Linux 3.21 | Bun 1.4+, Node.js LTS, Python 3.12, Astral uv, Git, jq | Bots Discord, serveurs API, scripts, webhooks, Node/Python servers |
+
+### ⚡ Optimisations de taille et de démarrage
+
+- **Java** : base *distroless* + JRE Temurin allégé (sans man pages, sources, X11). Java 21 : ~63 Mo compressés / 270 Mo décompressés (≈ 450 Mo avant) ; Java 8 : ~52 Mo compressés.
+- **SteamCMD / Wine** : pas de documentation ni de locales (`dpkg path-exclude`), amorçage SteamCMD dans la même couche, plus de préfixe Wine inutile (le volume `/home/container` le masquait).
+- **Entrypoint** : compilé nativement pour chaque architecture cible (arm64 inclus), sondage PID 1 à 250 ms au repos (moins de réveils avec des centaines d'instances).
+- **Mémoire calculée par l'image** : à partir de `SERVER_MEMORY` (Mo), l'entrypoint exporte
+  - `RHINO_HEAP_MB` = limite − max(256 Mo, 12 %) : le noyau ne tue plus le serveur quand `-Xmx` = limite du conteneur ;
+  - `RHINO_JAVA_FLAGS` : jeu de flags JVM complet (`-Xms/-Xmx`, G1 « Aikar » adapté à la taille du tas, `ExitOnOutOfMemoryError`, déduplication de chaînes…). Dans un Now : `java {{RHINO_JAVA_FLAGS}} -jar {{SERVER_JARFILE}} nogui`. Les flags évoluent avec l'image, sans modifier les Nows.
+  - Variables utilisateur : `JAVA_PRESET` (`aikar` défaut · `proxy` · `zgc` Java 21+ · `minimal`) et `JAVA_EXTRA_FLAGS` (options `-…` additionnelles).
+- Les modèles `templates/*.json` embarquent des commandes de démarrage optimisées par jeu (srcds `-norestart -nobreakpad`, FiveM `onesync`, Node `--max-old-space-size`, Bun `--smol`, PocketMine JIT…).
+- Les images Java n'ont plus de shell : `RHINO_USE_SHELL=1` et les commandes avec `|`, `;`, `&` n'y fonctionnent pas (utiliser l'image generic).
+
 
 ---
 

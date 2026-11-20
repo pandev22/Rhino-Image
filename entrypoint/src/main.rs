@@ -215,6 +215,138 @@ pub fn contains_shell_metacharacters(cmd: &str) -> bool {
     false
 }
 
+// ---------------------------------------------------------------------------------------------
+// Runtime tuning derived from the container limits (computed IN the image, so every Now benefits
+// from an image update without editing its startup command).
+// ---------------------------------------------------------------------------------------------
+
+/// Placeholder expanded into SEVERAL arguments (a computed, trusted flag set).
+const JAVA_FLAGS_TOKEN: &str = "RHINO_JAVA_FLAGS";
+
+/// Heap (MiB) for a container limit: the JVM / Node / PHP needs headroom for metaspace, code
+/// cache, thread stacks, direct buffers and GC structures, otherwise the kernel OOM-kills the
+/// server the moment `-Xmx` equals the cgroup limit. Reserve max(256 MiB, 12 %), min heap 128 MiB.
+pub fn heap_mb(total_mb: u64) -> u64 {
+    let reserve = (total_mb * 12 / 100).max(256);
+    total_mb.saturating_sub(reserve).max(128)
+}
+
+/// Keep only sane JVM options from a user-provided list: `-…`, bounded, no control characters.
+pub fn sanitize_extra_flags(raw: &str) -> Vec<String> {
+    raw.split_whitespace()
+        .filter(|f| f.starts_with('-') && f.len() <= 256 && !f.chars().any(|c| c.is_control()))
+        .take(64)
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Build the JVM flag set. `preset`: `aikar` (default, game servers), `proxy` (Velocity /
+/// BungeeCord), `zgc` (Java 21+, low pause), `minimal` (heap only). All presets are compatible
+/// with Java 8 → 25 (flags that do not exist everywhere are version-gated).
+pub fn java_flags(heap: u64, major: u32, preset: &str, extra: &str) -> Vec<String> {
+    let mut f: Vec<String> = vec![
+        format!("-Xms{heap}M"),
+        format!("-Xmx{heap}M"),
+        // A dead server is better than a zombie one: let the panel see the crash and apply its policy.
+        "-XX:+ExitOnOutOfMemoryError".into(),
+        "-XX:+DisableExplicitGC".into(),
+        "-XX:+PerfDisableSharedMem".into(),
+        "-Dfile.encoding=UTF-8".into(),
+        "-Djava.awt.headless=true".into(),
+        "-Dterminal.jline=false".into(),
+        "-Dterminal.ansi=true".into(),
+    ];
+    let g1_common = |f: &mut Vec<String>| {
+        f.push("-XX:+UseG1GC".into());
+        f.push("-XX:+ParallelRefProcEnabled".into());
+        f.push("-XX:MaxGCPauseMillis=200".into());
+        f.push("-XX:+UnlockExperimentalVMOptions".into());
+        f.push("-XX:+UseStringDeduplication".into());
+    };
+    match preset {
+        "minimal" => {}
+        "zgc" if major >= 21 => {
+            f.push("-XX:+UseZGC".into());
+            if major < 23 {
+                f.push("-XX:+ZGenerational".into());
+            }
+        }
+        "proxy" => {
+            g1_common(&mut f);
+            f.push("-XX:G1HeapRegionSize=4M".into());
+            f.push("-XX:G1HeapWastePercent=5".into());
+            f.push("-XX:MaxInlineLevel=15".into());
+        }
+        // "aikar" and anything unknown/unsupported (e.g. zgc on Java 8): proven Minecraft flags.
+        _ => {
+            g1_common(&mut f);
+            let big = heap > 12 * 1024;
+            let (new, new_max, region, reserve, ihop) = if big {
+                (40, 50, "16M", 15, 20)
+            } else {
+                (30, 40, "8M", 20, 15)
+            };
+            f.push(format!("-XX:G1NewSizePercent={new}"));
+            f.push(format!("-XX:G1MaxNewSizePercent={new_max}"));
+            f.push(format!("-XX:G1HeapRegionSize={region}"));
+            f.push(format!("-XX:G1ReservePercent={reserve}"));
+            f.push(format!("-XX:InitiatingHeapOccupancyPercent={ihop}"));
+            f.push("-XX:G1HeapWastePercent=5".into());
+            f.push("-XX:G1MixedGCCountTarget=4".into());
+            f.push("-XX:G1MixedGCLiveThresholdPercent=90".into());
+            f.push("-XX:G1RSetUpdatingPauseTimePercent=5".into());
+            f.push("-XX:SurvivorRatio=32".into());
+            f.push("-XX:MaxTenuringThreshold=1".into());
+        }
+    }
+    f.extend(sanitize_extra_flags(extra));
+    f
+}
+
+/// Export `RHINO_HEAP_MB` and `RHINO_JAVA_FLAGS` from `SERVER_MEMORY` (MiB), unless already set.
+fn derive_runtime_vars() {
+    let Some(total) = env::var("SERVER_MEMORY")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .filter(|v| *v >= 64)
+    else {
+        return;
+    };
+    let heap = heap_mb(total);
+    if env::var_os("RHINO_HEAP_MB").is_none() {
+        env::set_var("RHINO_HEAP_MB", heap.to_string());
+    }
+    if env::var_os(JAVA_FLAGS_TOKEN).is_none() {
+        let major = env::var("RHINO_JAVA_MAJOR")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(21);
+        let preset = env::var("JAVA_PRESET").unwrap_or_default();
+        let extra = env::var("JAVA_EXTRA_FLAGS").unwrap_or_default();
+        let flags = java_flags(heap, major, preset.trim(), &extra);
+        env::set_var(JAVA_FLAGS_TOKEN, flags.join(" "));
+    }
+}
+
+/// Split the TEMPLATE, then expand each argument; the computed flag token becomes N arguments.
+pub fn expand_tokens(template: &str) -> Vec<String> {
+    let marker = format!("{{{{{JAVA_FLAGS_TOKEN}}}}}");
+    let mut out = Vec::new();
+    for t in tokenize_command(template) {
+        if t == marker {
+            out.extend(
+                env::var(JAVA_FLAGS_TOKEN)
+                    .unwrap_or_default()
+                    .split_whitespace()
+                    .map(str::to_owned),
+            );
+        } else {
+            out.push(interpolate_variables(&t));
+        }
+    }
+    out
+}
+
 fn signal_name(sig: libc::c_int) -> &'static str {
     match sig {
         libc::SIGTERM => "SIGTERM",
@@ -531,11 +663,15 @@ fn main() {
         process::exit(1);
     };
 
+<<<<<<< HEAD
     // Normalize Windows CRLF anywhere in the command/template and sanitize an install script
     // mounted under /mnt/install before it is executed. This prevents `\r` from breaking
     // `cd`, `set -eu` or every argument of the install command.
     let raw_cmd = raw_cmd.replace('\r', "");
     let raw_cmd = sanitize_install_scripts(&raw_cmd);
+=======
+    derive_runtime_vars();
+>>>>>>> f6e11ff (Refactor Dockerfile and update game server templates)
 
     // Interpolate environment variables safely in-memory
     let interpolated = interpolate_variables(&raw_cmd);
@@ -570,10 +706,7 @@ fn main() {
     } else {
         // Split the TEMPLATE first, then expand each argument: a value containing spaces or
         // quotes stays one argument.
-        let tokens: Vec<String> = tokenize_command(&raw_cmd)
-            .iter()
-            .map(|t| interpolate_variables(t))
-            .collect();
+        let tokens: Vec<String> = expand_tokens(&raw_cmd);
         if tokens.is_empty() {
             eprintln!("[rhino-entrypoint] Error: Tokenized command is empty.");
             process::exit(1);
@@ -698,8 +831,8 @@ fn main() {
             std::thread::sleep(Duration::from_millis(200));
         }
 
-        // Low-latency, low-CPU poll sleep (50 ms)
-        std::thread::sleep(Duration::from_millis(50));
+        // Idle servers poll rarely (hundreds of instances per host); react fast while stopping.
+        std::thread::sleep(Duration::from_millis(if terminating { 50 } else { 250 }));
     }
 
     // Cleanup background helper if started
@@ -813,6 +946,7 @@ mod tests {
     }
 
     #[test]
+<<<<<<< HEAD
     fn test_install_script_crlf_is_normalized() {
         let src = std::env::temp_dir().join(format!("rhino-crlf-{}.sh", process::id()));
         fs::write(&src, b"#!/bin/bash\r\nset -eu\r\ncd /home/container\r\n").unwrap();
@@ -822,5 +956,46 @@ mod tests {
         assert!(body.starts_with(b"#!/bin/bash\n"));
         let _ = fs::remove_file(&src);
         let _ = fs::remove_file(&cleaned);
+=======
+    fn test_heap_headroom() {
+        assert_eq!(heap_mb(1024), 768);
+        assert_eq!(heap_mb(4096), 3605);
+        assert_eq!(heap_mb(512), 256);
+        assert_eq!(heap_mb(256), 128);
+        assert!(heap_mb(16384) < 16384 - 1900);
+    }
+
+    #[test]
+    fn test_java_flags_presets() {
+        let a = java_flags(3605, 21, "aikar", "");
+        assert!(a.contains(&"-Xms3605M".to_string()) && a.contains(&"-Xmx3605M".to_string()));
+        assert!(a.contains(&"-XX:G1HeapRegionSize=8M".to_string()));
+        let big = java_flags(16384, 21, "", "");
+        assert!(big.contains(&"-XX:G1HeapRegionSize=16M".to_string()));
+        let z = java_flags(4096, 21, "zgc", "");
+        assert!(
+            z.contains(&"-XX:+UseZGC".to_string()) && z.contains(&"-XX:+ZGenerational".to_string())
+        );
+        let z25 = java_flags(4096, 25, "zgc", "");
+        assert!(!z25.contains(&"-XX:+ZGenerational".to_string()));
+        // zgc is not available on Java 8: falls back to the G1 preset.
+        assert!(java_flags(4096, 8, "zgc", "").contains(&"-XX:+UseG1GC".to_string()));
+        assert!(!java_flags(1024, 17, "minimal", "")
+            .iter()
+            .any(|x| x.contains("G1")));
+    }
+
+    #[test]
+    fn test_extra_flags_are_filtered() {
+        let f = sanitize_extra_flags("-Dfoo=bar evil.Main -XX:+UseNUMA ; rm");
+        assert_eq!(f, vec!["-Dfoo=bar".to_string(), "-XX:+UseNUMA".to_string()]);
+    }
+
+    #[test]
+    fn test_flag_token_expands_to_many_args() {
+        unsafe { env::set_var("RHINO_JAVA_FLAGS", "-Xmx1M -XX:+UseG1GC") };
+        let t = expand_tokens("java {{RHINO_JAVA_FLAGS}} -jar x.jar");
+        assert_eq!(t, vec!["java", "-Xmx1M", "-XX:+UseG1GC", "-jar", "x.jar"]);
+>>>>>>> f6e11ff (Refactor Dockerfile and update game server templates)
     }
 }
