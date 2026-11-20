@@ -45,8 +45,12 @@ ENV USER=rhino \
     NPM_CONFIG_FUND=false \
     NPM_CONFIG_AUDIT=false
 
-# Install runtime dependencies, Node.js LTS, Python 3, and core utilities
-RUN apk add --no-cache \
+# Install runtime dependencies, Node.js LTS, Python 3, and core utilities.
+# `apk add` does not upgrade packages already present in the base image: run `apk upgrade` so
+# security fixes such as zlib 1.4 (CVE-2026-4738) reach the final image. The weekly rebuild
+# reruns this layer with --no-cache.
+RUN apk upgrade --no-cache && \
+    apk add --no-cache \
         ca-certificates \
         tzdata \
         curl \
