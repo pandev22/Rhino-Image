@@ -61,7 +61,6 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
     groupadd -g 1000 rhino && \
     useradd -u 1000 -g rhino -m -d /home/container -s /bin/bash rhino && \
     mkdir -p /home/container /usr/local/steamcmd /home/container/.steam /home/container/Steam && \
-<<<<<<< HEAD
     curl -fsSL --proto '=https' --proto-redir '=https' --retry 3 --retry-delay 2 \
         -o /tmp/steamcmd_linux.tar.gz \
         "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz" && \
@@ -71,19 +70,12 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
     printf '%s\n' '#!/bin/sh' 'exec /usr/local/steamcmd/steamcmd.sh "$@"' > /usr/local/bin/steamcmd && \
     chmod 0755 /usr/local/bin/steamcmd && \
     sed -i 's|STEAMROOT="$(cd "$(dirname "$0")"|STEAMROOT="$(cd "$(dirname "$(readlink -f "$0")")"|' /usr/local/steamcmd/steamcmd.sh && \
-=======
-    curl -fsSL "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz" | \
-        tar -xzC /usr/local/steamcmd && \
-    # Wrapper, not a symlink: steamcmd.sh locates linux32/ relative to $0 and does not follow symlinks.
-    printf '#!/bin/sh\nexec /usr/local/steamcmd/steamcmd.sh "$@"\n' > /usr/local/bin/steamcmd && \
-    chmod 755 /usr/local/bin/steamcmd && \
->>>>>>> f6e11ff (Refactor Dockerfile and update game server templates)
     mkdir -p /home/container/.steam/sdk32 /home/container/.steam/sdk64 && \
     ln -sf /usr/local/steamcmd/linux32/steamclient.so /home/container/.steam/sdk32/steamclient.so 2>/dev/null || true && \
     ln -sf /usr/local/steamcmd/linux64/steamclient.so /home/container/.steam/sdk64/steamclient.so 2>/dev/null || true && \
     # Bootstrap SteamCMD (self-update) as root in THIS layer, then hand over: the rootfs is read-only
     # at runtime, so the client files must be fully up to date in the image.
-    if [ "$TARGETARCH" = "amd64" ]; then /usr/local/steamcmd/steamcmd.sh +quit || true; fi && \
+    if [ "$TARGETARCH" = "amd64" ]; then /usr/local/steamcmd/steamcmd.sh +quit; fi && \
     chown -R rhino:rhino /home/container /usr/local/steamcmd && \
     find / -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true && \
     apt-get clean && \
@@ -95,13 +87,5 @@ COPY --from=entrypoint-builder --chmod=755 /rhino-entrypoint /usr/local/bin/rhin
 WORKDIR /home/container
 USER rhino
 
-<<<<<<< HEAD
-# Perform initial SteamCMD bootstrap update to cache client runtime files
-RUN if [ "$TARGETARCH" = "amd64" ]; then \
-        /usr/local/bin/steamcmd +quit; \
-    fi
-
-=======
->>>>>>> f6e11ff (Refactor Dockerfile and update game server templates)
 ENTRYPOINT ["/usr/local/bin/rhino-entrypoint"]
 CMD ["steamcmd", "+quit"]

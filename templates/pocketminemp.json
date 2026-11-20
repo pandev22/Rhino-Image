@@ -1,10 +1,6 @@
 {
   "format": "rhino-now-v1",
-<<<<<<< HEAD
-  "exported_at": "2026-11-19T23:21:17.670309+00:00",
-=======
-  "exported_at": "2026-11-20T10:29:27.463008+00:00",
->>>>>>> f6e11ff (Refactor Dockerfile and update game server templates)
+  "exported_at": "2026-11-20T10:34:45.291564+00:00",
   "now": {
     "name": "PocketMine-MP",
     "author": "Rhino Team",

@@ -565,11 +565,7 @@ fn sanitize_install_script(path: &Path) -> Option<PathBuf> {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    let out = std::env::temp_dir().join(format!(
-        "rhino-install-{}-{}.sh",
-        process::id(),
-        nonce
-    ));
+    let out = std::env::temp_dir().join(format!("rhino-install-{}-{}.sh", process::id(), nonce));
     let mut file = fs::OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -663,15 +659,13 @@ fn main() {
         process::exit(1);
     };
 
-<<<<<<< HEAD
     // Normalize Windows CRLF anywhere in the command/template and sanitize an install script
     // mounted under /mnt/install before it is executed. This prevents `\r` from breaking
     // `cd`, `set -eu` or every argument of the install command.
     let raw_cmd = raw_cmd.replace('\r', "");
     let raw_cmd = sanitize_install_scripts(&raw_cmd);
-=======
+
     derive_runtime_vars();
->>>>>>> f6e11ff (Refactor Dockerfile and update game server templates)
 
     // Interpolate environment variables safely in-memory
     let interpolated = interpolate_variables(&raw_cmd);
@@ -946,7 +940,6 @@ mod tests {
     }
 
     #[test]
-<<<<<<< HEAD
     fn test_install_script_crlf_is_normalized() {
         let src = std::env::temp_dir().join(format!("rhino-crlf-{}.sh", process::id()));
         fs::write(&src, b"#!/bin/bash\r\nset -eu\r\ncd /home/container\r\n").unwrap();
@@ -956,7 +949,9 @@ mod tests {
         assert!(body.starts_with(b"#!/bin/bash\n"));
         let _ = fs::remove_file(&src);
         let _ = fs::remove_file(&cleaned);
-=======
+    }
+
+    #[test]
     fn test_heap_headroom() {
         assert_eq!(heap_mb(1024), 768);
         assert_eq!(heap_mb(4096), 3605);
@@ -996,6 +991,5 @@ mod tests {
         unsafe { env::set_var("RHINO_JAVA_FLAGS", "-Xmx1M -XX:+UseG1GC") };
         let t = expand_tokens("java {{RHINO_JAVA_FLAGS}} -jar x.jar");
         assert_eq!(t, vec!["java", "-Xmx1M", "-XX:+UseG1GC", "-jar", "x.jar"]);
->>>>>>> f6e11ff (Refactor Dockerfile and update game server templates)
     }
 }
